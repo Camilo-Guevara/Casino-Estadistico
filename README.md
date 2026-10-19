@@ -1,5 +1,8 @@
 # Casino Estadístico
 
+**[Abrir la demostración en Streamlit](https://casino-estadistico-ubpy8lsfkqbb8yh6teansn.streamlit.app/)**  
+URL compartida por el autor. La disponibilidad y los controles de la demo se revisan en GitHub Actions con una prueba de navegador.
+
 **El azar se juega. La estadística se comprende.**
 
 Proyecto académico de **Camilo Guevara**. Laboratorio interactivo en español que conecta simulación Monte Carlo, probabilidad, inferencia y visualización. Conserva el enfoque Python + Streamlit + Plotly del proyecto Titanic Survival Analytics.
