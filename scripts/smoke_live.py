@@ -29,7 +29,7 @@ def check_desktop(browser):
                 response = page.goto(URL, wait_until="domcontentloaded", timeout=45000)
                 if response is not None:
                     print(f"HTTP status on attempt {attempts}: {response.status}")
-                page.get_by_role("heading", name=re.compile("Casino\\s+Estadístico", re.I)).wait_for(timeout=23000)
+                page.locator(".hero h1").wait_for(timeout=23000)
                 break
             except (PlaywrightTimeout, Exception) as exc:
                 print(f"Waiting for Streamlit to start: {type(exc).__name__}: {str(exc)[:160]}")
@@ -63,7 +63,7 @@ def check_mobile(browser):
     page = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1, is_mobile=True, has_touch=True)
     try:
         page.goto(URL, wait_until="domcontentloaded", timeout=45000)
-        page.get_by_role("heading", name=re.compile("Casino\\s+Estadístico", re.I)).wait_for(timeout=90000)
+        page.locator(".hero h1").wait_for(timeout=90000)
         page.screenshot(path=str(ARTIFACTS / "mobile-inicio.png"), full_page=True)
         width = page.evaluate("document.documentElement.scrollWidth")
         print(f"Mobile screenshot saved (document scroll width: {width}px, viewport: 390px)")
