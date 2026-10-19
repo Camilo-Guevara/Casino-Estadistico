@@ -50,8 +50,11 @@ def check_desktop(browser):
         print("OK: dashboard title, controls and calibration label", flush=True)
 
         app.get_by_role("button", name="▶ Lanzar 100 tiradas").click(timeout=18000)
-        app.get_by_text("Tiradas acumuladas").wait_for(timeout=18000)
-        print("OK: manual simulation button clicked", flush=True)
+        # This message is rendered only after a nonempty simulation. Merely
+        # clicking a button or reading the static 'Tiradas acumuladas' label
+        # would yield a false positive while Streamlit rerenders.
+        app.get_by_text("Último resultado:", exact=False).wait_for(timeout=30000)
+        print("OK: manual simulation generated at least one actual result", flush=True)
 
         # The tab label may be inside a button, depending on Streamlit version.
         tab = app.get_by_role("tab", name="Calibración")
@@ -60,8 +63,9 @@ def check_desktop(browser):
         else:
             app.get_by_text("Calibración", exact=True).first.click(timeout=15000)
         app.get_by_text("Calibración: observado vs. esperado").wait_for(timeout=18000)
+        app.get_by_text("Tasa observada", exact=False).wait_for(timeout=25000)
         page.screenshot(path=str(OUT / "desktop-calibracion.png"), full_page=True)
-        print("OK: calibration tab displayed", flush=True)
+        print("OK: calibration computed from a nonempty sample", flush=True)
     except Exception:
         page.screenshot(path=str(OUT / "desktop-error.png"), full_page=True)
         raise
