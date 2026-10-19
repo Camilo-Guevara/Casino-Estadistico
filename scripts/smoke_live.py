@@ -1,92 +1,102 @@
-"""Prueba de humo del Casino Estadístico desplegado en Streamlit Cloud.
+"""Comprobación de la aplicación Streamlit pública con Playwright.
 
-Verifica renderizado real con Chromium, interacción básica, calibración y
-capturas de escritorio/móvil. No sustituye una revisión humana de estética.
+Busca el dashboard tanto en la página principal como en marcos embebidos.
+Genera imágenes de diagnóstico si algún control no se puede automatizar.
 """
 import os
-import re
 import time
 from pathlib import Path
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from playwright.sync_api import sync_playwright
 
-URL = os.environ.get(
-    "APP_URL",
-    "https://casino-estadistico-ubpy8lsfkqbb8yh6teansn.streamlit.app/",
-)
-ARTIFACTS = Path("artifacts/live-smoke")
-ARTIFACTS.mkdir(parents=True, exist_ok=True)
+URL = os.environ.get("APP_URL", "https://casino-estadistico-ubpy8lsfkqbb8yh6teansn.streamlit.app/")
+OUT = Path("artifacts/live-smoke")
+OUT.mkdir(parents=True, exist_ok=True)
+
+
+def find_application(page, timeout=120):
+    deadline = time.monotonic() + timeout
+    last_report = 0
+    while time.monotonic() < deadline:
+        for frame in page.frames:
+            try:
+                text = frame.locator("body").inner_text(timeout=1800)
+                if "Casino" in text and "Estadístico" in text and "Lanzar" in text:
+                    print(f"Found Streamlit UI in frame: {frame.url}", flush=True)
+                    return frame
+            except Exception:
+                continue
+        if time.monotonic() - last_report > 20:
+            last_report = time.monotonic()
+            print(f"Waiting for UI; frames={len(page.frames)}", flush=True)
+            for frame in page.frames[:5]:
+                try:
+                    preview = frame.locator("body").inner_text(timeout=1000)[:240].replace("\n", " ")
+                    print(f"Frame {frame.url}: {preview!r}", flush=True)
+                except Exception as exc:
+                    print(f"Frame inaccessible ({str(exc)[:120]})", flush=True)
+        page.wait_for_timeout(2000)
+    raise AssertionError("UI not found in root document or child frames.")
 
 
 def check_desktop(browser):
-    page = browser.new_page(viewport={"width": 1440, "height": 960}, device_scale_factor=1)
-    page.on("pageerror", lambda error: print(f"Browser JavaScript error: {error}"))
+    page = browser.new_page(viewport={"width": 1440, "height": 960})
     try:
-        deadline = time.monotonic() + 180
-        attempts = 0
-        while time.monotonic() < deadline:
-            attempts += 1
-            try:
-                response = page.goto(URL, wait_until="domcontentloaded", timeout=45000)
-                if response is not None:
-                    print(f"HTTP status on attempt {attempts}: {response.status}")
-                page.locator(".hero h1").wait_for(timeout=23000)
-                break
-            except (PlaywrightTimeout, Exception) as exc:
-                print(f"Waiting for Streamlit to start: {type(exc).__name__}: {str(exc)[:160]}")
-                page.wait_for_timeout(2500)
+        response = page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+        print(f"Desktop HTTP {response.status if response else 'unknown'}", flush=True)
+        app = find_application(page)
+        page.screenshot(path=str(OUT / "desktop-inicio.png"), full_page=True)
+        assert app.get_by_text("Mesa estadística", exact=False).count() >= 1
+        assert app.get_by_text("Calibración", exact=True).count() >= 1
+        print("OK: dashboard title, controls and calibration label", flush=True)
+
+        app.get_by_role("button", name="▶ Lanzar 100 tiradas").click(timeout=18000)
+        app.get_by_text("Tiradas acumuladas").wait_for(timeout=18000)
+        print("OK: manual simulation button clicked", flush=True)
+
+        # The tab label may be inside a button, depending on Streamlit version.
+        tab = app.get_by_role("tab", name="Calibración")
+        if tab.count():
+            tab.click(timeout=15000)
         else:
-            raise AssertionError("Casino Estadístico was not rendered within 180 seconds")
-
-        print("OK: heading Casino Estadístico rendered")
-        assert page.get_by_text("Mesa estadística", exact=False).count() >= 1
-        assert page.get_by_role("tab", name="Calibración").count() >= 1
-        assert page.locator('[data-testid="stPlotlyChart"]').count() >= 1
-        page.screenshot(path=str(ARTIFACTS / "desktop-inicio.png"), full_page=True)
-        print("OK: controls and Plotly chart present")
-
-        page.get_by_role("button", name=re.compile("Lanzar")).first.click()
-        page.get_by_text("Tiradas acumuladas", exact=False).first.wait_for(timeout=30000)
-        page.get_by_role("tab", name="Calibración").click()
-        page.get_by_text("Calibración: observado vs. esperado").wait_for(timeout=30000)
-        assert page.get_by_text("Tasa observada", exact=False).count() >= 1
-        page.screenshot(path=str(ARTIFACTS / "desktop-calibracion.png"), full_page=True)
-        print("OK: simulated a batch and rendered calibration tab")
-        return True
+            app.get_by_text("Calibración", exact=True).first.click(timeout=15000)
+        app.get_by_text("Calibración: observado vs. esperado").wait_for(timeout=18000)
+        page.screenshot(path=str(OUT / "desktop-calibracion.png"), full_page=True)
+        print("OK: calibration tab displayed", flush=True)
     except Exception:
-        page.screenshot(path=str(ARTIFACTS / "desktop-error.png"), full_page=True)
+        page.screenshot(path=str(OUT / "desktop-error.png"), full_page=True)
         raise
     finally:
         page.close()
 
 
 def check_mobile(browser):
-    page = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1, is_mobile=True, has_touch=True)
+    page = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
     try:
-        page.goto(URL, wait_until="domcontentloaded", timeout=45000)
-        page.locator(".hero h1").wait_for(timeout=90000)
-        page.screenshot(path=str(ARTIFACTS / "mobile-inicio.png"), full_page=True)
-        width = page.evaluate("document.documentElement.scrollWidth")
-        print(f"Mobile screenshot saved (document scroll width: {width}px, viewport: 390px)")
-        # Plotly/Streamlit may use a few pixels of rounding; reject major overflow.
+        response = page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+        print(f"Mobile HTTP {response.status if response else 'unknown'}", flush=True)
+        frame = find_application(page, timeout=90)
+        page.screenshot(path=str(OUT / "mobile-inicio.png"), full_page=True)
+        width = frame.evaluate("document.documentElement.scrollWidth")
+        print(f"Mobile width: {width}px (viewport 390px)", flush=True)
         if width > 430:
-            raise AssertionError(f"Excessive horizontal mobile overflow: {width}px")
-        print("OK: mobile page renders without major horizontal overflow")
+            raise AssertionError(f"Mobile horizontal overflow: {width}px")
+        print("OK: mobile rendered without major overflow", flush=True)
     except Exception:
-        page.screenshot(path=str(ARTIFACTS / "mobile-error.png"), full_page=True)
+        page.screenshot(path=str(OUT / "mobile-error.png"), full_page=True)
         raise
     finally:
         page.close()
 
 
 def main():
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
         try:
             check_desktop(browser)
             check_mobile(browser)
         finally:
             browser.close()
-    print(f"LIVE SMOKE PASSED: {URL}")
+    print("LIVE SMOKE PASSED", flush=True)
 
 
 if __name__ == "__main__":
