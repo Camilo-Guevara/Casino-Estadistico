@@ -13,6 +13,7 @@ Proyecto académico de **Camilo Guevara**. Laboratorio interactivo en español q
 - Pausa opcional al terminar un lote con eventos raros; límite de 20.000 resultados por sesión.
 - Inferencia de la media: prueba binomial exacta e IC Clopper–Pearson; Poisson por colas iguales e IC Garwood; prueba Z con sigma conocida para Normal.
 - CSV con resultados, parámetros, semilla, Z-scores, probabilidades de colas y media acumulada; configuración JSON.
+- **Nueva calibración de modelo:** frecuencia esperada vs. observada de eventos raros, error de la media, error estándar y Z de la media (distinto del Z individual).
 
 ## Ejecutar
 Recomendado: Python 3.12.
@@ -48,7 +49,9 @@ flowchart TD
 |---|---|
 | `app.py` | Controles, sesión, piloto automático, gráficos y explicaciones |
 | `engine.py` | Validación, generación, momentos, rareza, inferencia y exportación |
-| `tests/` | Pruebas matemáticas y flujos de UI con Streamlit AppTest |
+| `diagnostics.py` | Probabilidad teórica de eventos raros y diagnóstico observado vs. esperado |
+| `tests/` | Pruebas matemáticas, calibración y flujos de UI con Streamlit AppTest |
+| `.github/workflows/ci.yml` | Pruebas automáticas de Python y Streamlit en GitHub Actions |
 | `.streamlit/config.toml` | Tema oscuro accesible |
 
 ## Criterios estadísticos
@@ -71,7 +74,33 @@ Un evento raro no demuestra sesgo. El IC de la media no es la zona central de re
 python -m pip install pytest
 python -m pytest -q
 ```
-18 pruebas pasan en el entorno de desarrollo: momentos y simulación, probabilidades de colas, control conservador de falsas alarmas discretas, límites p=0/1, reproducibilidad, inferencia, cambios de modelo, reinicio y activación del modo automático. AppTest comprueba la lógica, no sustituye una auditoría visual de navegador ni verifica por sí solo el temporizador en un navegador real.
+La suite incluye pruebas del motor, calibración y la interfaz. Ejecútala para comprobar los resultados en tu entorno; GitHub Actions vuelve a ejecutarla al enviar cambios: momentos y simulación, probabilidades de colas, control conservador de falsas alarmas discretas, límites p=0/1, reproducibilidad, inferencia, cambios de modelo, reinicio y activación del modo automático. AppTest comprueba la lógica, no sustituye una auditoría visual de navegador ni verifica por sí solo el temporizador en un navegador real.
+
+## Calibración del experimento
+
+La pestaña **Calibración** separa dos preguntas que no son equivalentes:
+
+1. ¿Qué frecuencia de eventos raros predice el modelo elegido y su cobertura?
+2. ¿Qué frecuencia y qué media observó nuestra muestra?
+
+En la **Normal** la tasa esperada bajo un criterio bilateral de colas es α.
+En **Binomial** se suma exactamente la masa de los resultados que cumplen el
+criterio; en **Poisson** se suma sobre un soporte truncado con masa de cola
+omitida de aproximadamente 10⁻¹² o menos. Debido a la discreción, la tasa
+esperada de eventos marcados puede ser menor que α.
+
+Se añade el **Z de la media**: (media observada − media teórica) / (σ / √N).
+No debe confundirse con el Z-score individual de la última tirada.
+Cuando la varianza es cero, el Z de la media no está definido.
+
+Estas métricas son exploratorias, no diagnostican por sí solas sesgo y no
+corrigen el problema de inspeccionar p-valores de forma repetida.
+
+### Verificación automática
+
+En GitHub, abre **Actions → Validación Python** para revisar las pruebas
+después de publicar o abrir un pull request. Las pruebas automáticas no
+equivalen a haber inspeccionado visualmente el comportamiento en un navegador.
 
 ## Limitaciones
 - El piloto funciona mientras la sesión de Streamlit está activa; no es un trabajo programado en segundo plano.

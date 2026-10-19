@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from scipy import stats
 import streamlit as st
 from engine import Model, mean_inference, export_frame
+from diagnostics import expected_rare_rate, experiment_diagnostics
 
 st.set_page_config(page_title='Casino Estadístico · Camilo Guevara', page_icon='🎲', layout='wide')
 st.markdown('''<style>
@@ -118,7 +119,7 @@ with main:
             add_batch()
         a=np.asarray(st.session_state['values'])
         mean,var=model.moments
-        tabs=st.tabs(['Mesa en vivo','Inferencia','Cómo funciona','Datos y descargas'])
+        tabs=st.tabs(['Mesa en vivo','Inferencia','Calibración','Cómo funciona','Datos y descargas'])
         with tabs[0]:
             plot,hud=st.columns([2.7,1],gap='medium')
             with plot:
@@ -169,6 +170,44 @@ with main:
                 st.write('El p-valor no es la probabilidad de que H₀ sea verdadera. Un intervalo de confianza describe la cobertura del procedimiento al repetir el experimento, no la probabilidad de un parámetro fijo.')
             else: st.info('Genera datos para calcular el intervalo y el contraste.')
         with tabs[2]:
+            st.subheader('Calibración: observado vs. esperado')
+            st.write('¿Cuántos eventos raros produce realmente este modelo? En distribuciones discretas, el criterio de dos colas puede dar una tasa menor que α.')
+            baseline = expected_rare_rate(model, confidence)
+            st.metric('Tasa teórica de eventos marcados', f'{baseline:.2%}',
+                      help='Probabilidad de que una tirada esté en las colas bilaterales definidas con el umbral seleccionado. No equivale necesariamente a α.')
+            if len(a):
+                diag = experiment_diagnostics(model, a, confidence)
+                d1, d2, d3 = st.columns(3)
+                d1.metric('Eventos raros observados', f'{diag["rare_count"]:,} de {diag["size"]:,}')
+                d2.metric('Tasa observada', f'{diag["observed_rare_rate"]:.2%}')
+                d3.metric('Eventos esperados (promedio)', f'{diag["expected_rare_count"]:.1f}')
+                fig = go.Figure(go.Bar(
+                    x=['Teórica', 'Observada'],
+                    y=[baseline, diag['observed_rare_rate']],
+                    marker_color=[CYAN, GOLD],
+                    text=[f'{baseline:.2%}', f'{diag["observed_rare_rate"]:.2%}'],
+                    textposition='outside',
+                ))
+                fig.update_layout(yaxis_tickformat='.1%', yaxis_title='Frecuencia de eventos raros',
+                                  xaxis_title='', showlegend=False)
+                st.plotly_chart(style(fig, 300), use_container_width=True, key='calibration',
+                                config={'displayModeBar':False})
+                z = diag['mean_z']
+                z_text = 'No definido: varianza nula' if z is None else f'{z:+.2f}'
+                k1, k2, k3 = st.columns(3)
+                k1.metric('Media teórica', f'{diag["theoretical_mean"]:.3f}')
+                k2.metric('Media observada', f'{diag["observed_mean"]:.3f}')
+                k3.metric('Z de la media', z_text,
+                          help='(Media observada − media teórica) / error estándar teórico; distinto al Z de una tirada.')
+                st.caption(f'Error estándar de la media: {diag["mean_standard_error"]:.4f}. '
+                           f'Error absoluto: {diag["absolute_mean_error"]:.4f}. '
+                           'La variación muestral es normal: no esperes coincidencia exacta.')
+                st.info('Que la frecuencia observada difiera de la teórica no demuestra un fallo. '
+                        'Para contrastes confirmatorios define el tamaño de muestra antes de analizar. '
+                        'El piloto automático y la inspección repetida no preservan un nivel nominal de error.')
+            else:
+                st.info('Primero lanza un lote. Después podrás comparar la frecuencia de eventos raros y la media muestral contra sus valores teóricos.')
+        with tabs[3]:
             st.markdown('''### Tres mesas, tres modelos
 | Mesa | Una tirada representa | Media | Varianza |
 |---|---|---|---|
@@ -191,7 +230,7 @@ with main:
 **Arquitectura.** Streamlit controla la sesión; `engine.py` implementa modelos, colas e inferencia con NumPy/SciPy; Plotly representa los resultados. Los datos se mantienen en la sesión, sin cuentas ni base de datos.
 ''')
             st.caption('Referencias: SciPy stats.binom, stats.poisson, stats.norm y stats.binomtest; documentación Streamlit st.fragment.')
-        with tabs[3]:
+        with tabs[4]:
             st.subheader('Un experimento que puedes auditar')
             st.json(dict(modelo=asdict(model),semilla=seed,tiradas=len(a),confianza=confidence))
             if len(a):
